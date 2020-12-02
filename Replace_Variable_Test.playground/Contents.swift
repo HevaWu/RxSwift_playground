@@ -12,9 +12,6 @@ var disposeBag = DisposeBag()
 var variable = Variable<String>("init variable")
 
 variable.asObservable()
-    .do(onNext: {
-        print("variable value changed: \($0)")
-    })
     .debug("=== variable: ")
     .subscribe()
     .disposed(by: disposeBag)
@@ -22,9 +19,6 @@ variable.asObservable()
 var behaviorRelay = BehaviorRelay<String>(value: "init relay")
 
 behaviorRelay.asObservable()
-    .do(onNext: {
-        print("behaviorRelay value changed: \($0)")
-    })
     .debug("=== behaviorRelay: ")
     .subscribe()
     .disposed(by: disposeBag)
@@ -32,14 +26,11 @@ behaviorRelay.asObservable()
 var behaviorSubject = BehaviorSubject<String>(value: "init subject")
 
 behaviorSubject.asObservable()
-    .do(onNext: {
-        print("behaviorSubject value changed: \($0)")
-    })
     .debug("=== behaviorSubject: ")
     .subscribe()
     .disposed(by: disposeBag)
 
-let error = NSError.init(domain: "rxtestErrorDomain", code: 401, userInfo: [NSLocalizedDescriptionKey: "Single Thread Error 1"])
+let error = NSError.init(domain: "rxtestErrorDomain", code: 401, userInfo: [NSLocalizedDescriptionKey: "Replace_Variable_Test Thread Error 1"])
 
 // test single thread replacing
 
@@ -111,69 +102,88 @@ let error = NSError.init(domain: "rxtestErrorDomain", code: 401, userInfo: [NSLo
 
 // test multi thread replacing
 
-let thread1 = DispatchQueue(label: "Test Thread1", qos: .utility, attributes: .concurrent, autoreleaseFrequency: .inherit)
+let thread1 = DispatchQueue(label: "Test Thread1")
 let thread2 = DispatchQueue(label: "Test Thread2", qos: .utility, attributes: .concurrent, autoreleaseFrequency: .inherit)
 let thread3 = DispatchQueue(label: "Test Thread3", qos: .utility, attributes: .concurrent, autoreleaseFrequency: .inherit)
 
-var multiThreadObservable = PublishSubject<String>()
+var multiThreadObservable: Observable<String> = Observable.create { observer -> Disposable in
+    observer.onNext("multi 1")
+    observer.onNext("multi 2")
+    observer.onNext("multi 3")
+    
+    // if we send this onError,
+    // in later observing, it will skip all previous onNext, directly send onError part
+//    observer.onError(error)
+    observer.onCompleted()
+    
+    observer.onNext("multi 4")
+    observer.onNext("multi 5")
+    observer.onNext("multi 6")
+    return Disposables.create()
+}
+
+let relayLock = NSLock()
+let subjectLock = NSLock()
 
 multiThreadObservable
-    .observeOn(ConcurrentDispatchQueueScheduler.init(queue: thread1))
+    .delay(.milliseconds(100), scheduler: ConcurrentDispatchQueueScheduler(queue: thread1))
     .do(onNext: { newValue in
         let newValue = "[Thread 1] " + newValue
-        variable.value = newValue
-//        behaviorRelay.accept(newValue)
-//        behaviorSubject.onNext(newValue)
+        variable.value = variable.value + newValue
+        relayLock.lock()
+        behaviorRelay.accept(behaviorRelay.value + newValue)
+        relayLock.unlock()
+        
+        subjectLock.lock()
+        behaviorSubject.onNext((try! behaviorSubject.value()) + newValue)
+        subjectLock.unlock()
     }, onError: { _ in
         variable.value = "[Error] variable"
-//        behaviorRelay.accept("[Error] behaviorRelay")
-//        behaviorSubject.onNext("[Error] behaviorSubject")
+        behaviorRelay.accept("[Error] behaviorRelay")
+        behaviorSubject.onNext("[Error] behaviorSubject")
     })
     .subscribe()
     .disposed(by: disposeBag)
 
-multiThreadObservable.onNext("multi 1")
-
 multiThreadObservable
-    .observeOn(ConcurrentDispatchQueueScheduler.init(queue: thread2))
+    .delay(.milliseconds(100), scheduler: ConcurrentDispatchQueueScheduler(queue: thread2))
     .do(onNext: { newValue in
         let newValue = "[Thread 2] " + newValue
-        variable.value = newValue
-//        behaviorRelay.accept(newValue)
-//        behaviorSubject.onNext(newValue)
+        variable.value = variable.value + newValue
+        relayLock.lock()
+        behaviorRelay.accept(behaviorRelay.value + newValue)
+        relayLock.unlock()
+        
+        subjectLock.lock()
+        behaviorSubject.onNext((try! behaviorSubject.value()) + newValue)
+        subjectLock.unlock()
     }, onError: { _ in
         variable.value = "[Error] variable"
-//        behaviorRelay.accept("[Error] behaviorRelay")
-//        behaviorSubject.onNext("[Error] behaviorSubject")
+        behaviorRelay.accept("[Error] behaviorRelay")
+        behaviorSubject.onNext("[Error] behaviorSubject")
     })
     .subscribe()
     .disposed(by: disposeBag)
-
-multiThreadObservable.onNext("multi 2")
 
 multiThreadObservable
-    .observeOn(ConcurrentDispatchQueueScheduler.init(queue: thread3))
+    .delay(.milliseconds(100), scheduler: ConcurrentDispatchQueueScheduler(queue: thread3))
     .do(onNext: { newValue in
         let newValue = "[Thread 3] " + newValue
-        variable.value = newValue
-//        behaviorRelay.accept(newValue)
-//        behaviorSubject.onNext(newValue)
+        variable.value = variable.value + newValue
+        relayLock.lock()
+        behaviorRelay.accept(behaviorRelay.value + newValue)
+        relayLock.unlock()
+        
+        subjectLock.lock()
+        behaviorSubject.onNext((try! behaviorSubject.value()) + newValue)
+        subjectLock.unlock()
     }, onError: { _ in
         variable.value = "[Error] variable"
-//        behaviorRelay.accept("[Error] behaviorRelay")
-//        behaviorSubject.onNext("[Error] behaviorSubject")
+        behaviorRelay.accept("[Error] behaviorRelay")
+        behaviorSubject.onNext("[Error] behaviorSubject")
     })
     .subscribe()
     .disposed(by: disposeBag)
 
-multiThreadObservable.onNext("multi 3")
-
-multiThreadObservable.onError(error)
-multiThreadObservable.onCompleted()
-
-multiThreadObservable.onNext("multi 4")
-multiThreadObservable.onNext("multi 5")
-multiThreadObservable.onNext("multi 6")
-
-// dealloc/clear disposeBag
-disposeBag = DisposeBag()
+// please check details comparing from here:
+// https://hevawu.github.io/blog/2020/12/02/Replace-deprecated-RxSwift-Variable
