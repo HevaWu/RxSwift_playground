@@ -2,6 +2,9 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "group:Never_Completable.playground">
+   </FileRef>
+   <FileRef
       location = "group:Replace_Variable_Test.playground">
    </FileRef>
    <FileRef

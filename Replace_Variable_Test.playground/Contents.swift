@@ -9,6 +9,8 @@ import RxRelay
 
 var disposeBag = DisposeBag()
 
+// test this with RxSwift 5+
+// RxSwift6 remove variable totally
 var variable = Variable<String>("init variable")
 
 variable.asObservable()
